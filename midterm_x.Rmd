@@ -1,0 +1,335 @@
+---
+title: "Midterm Report"
+author: "Xinxiang Gao"
+output: 
+  # pdf_document: default
+  html_document: default
+# link-citations: yes
+bibliography: ref.bib
+---
+
+```{r, warning=FALSE, message=FALSE}
+library(knitr)
+library(tidyverse)
+library(skimr)
+library(foreign)
+library(cowplot)
+library(gridExtra)
+```
+# Introduction 
+
+The National Health and Nutrition Examination Survey (NHANES) is a program conducted by the Centers for Disease Control and Prevention (CDC) to assess the health and nutritional status of adults and children in the United States. NHANES collects data through interviews, physical examinations, and laboratory tests, making it a valuable resource for studying various health-related outcomes.
+
+Sleeping disorders are becoming a huge concern in modern life. It is estimated that between 50 million and 70 million individuals are currently affected by persistent sleep disorders, with the most prevalent ones being insomnia, sleep apnea, and narcolepsy (NHLBI, 2022). These disorders not only impact an individual's quality of life but also carry substantial societal and economic impacts.
+
+This study aims to investigate *the factors that correlates sleeping time in the NHANES dataset*. We initially hypothesize that sleeping quality, alcohol consumption, mental depression and heart disease are connected to how long they sleep. Understanding these relationships is crucial for informing interventions aimed at promoting healthier sleep habits and mitigating the adverse effects of sleep disorders.
+
+# Methods 
+
+The datasets utilized in this study were obtained from the National Health and Nutrition Examination Survey (NHANES) website. From the variety of datasets available, four were selected for analysis: Sleep Disorders, Mental Health-Depression Screener, Alcohol Use, and Cardiovascular Health., with a sample size of ranging from 6433 to 10195 and covering the time period between 2017 and March 2020 pre-pandemic.
+
+```{r read data}
+slq <- read.xport('NHANES/P_SLQ.XPT')
+dpq <- read.xport('NHANES/P_DPQ.XPT')
+alq <- read.xport('NHANES/P_ALQ.XPT')
+cdq <- read.xport('NHANES/P_CDQ.XPT')
+```
+
+The documentation provided with each dataset on the website was utilized to understand the variables and their meanings. Variable names were modified from question id to a summary of the content of the corresponding questions, while retaining numerical values to represent the extent of the variables. For example, in the Mental Health-Depression Screener dataset, a scale of 0 to 3 indicates the severance of Have little interest in doing things, from "not at all" to "almost everyday". For some of the questions, answers that indicate "refuse to answer" or "do not know" are modified to NA values. 
+
+The missing value amount is huge by the nature of a questionnaire and mutation from negligible answer to NA values. To tackle this challenge, rather than gathering all available data, we opt to exclude questions with a high missing value rate and merge the sleep data with the relevant factors individually. Subsequently, we conduct our analysis while either excluding observations with missing values in the key variables or set missing values as a separate category.
+
+The potential outliers are well addressed by the datasets. For example, if a person drinks more than 15 drinks (in which a drink represents the quantity of a 12 oz. beer, a 5 oz. glass of wine, or one and a half ounces of liquor) everyday in the past 12 months, this observation value would be a static 15.
+
+Then besides the overall data cleaning, for each dataset, we modify as follows: 
+
+For the Sleep Disorders dataset, the average sleeping duration is calculated from their sleeping duration on weekdays and weekends with a weight of 5/7 and 2/7, respectively, and the answer to the question "How often feel overly sleepy during day?" serves as an indicator the sleeping quality.
+
+```{r mutate slq}
+slqm <- slq %>% 
+  mutate_all(~ ifelse(. %in% c(77777, 99999, '.', ''), NA, .)) %>% 
+  mutate(SLQ120 = ifelse(SLQ120 %in% c(7, 9), NA, SLQ120)) %>% 
+  mutate(SLQ030 = ifelse(SLQ030 %in% c(7, 9), NA, SLQ030)) %>% 
+  mutate(SLQ040 = ifelse(SLQ040 %in% c(7, 9), NA, SLQ040)) %>% 
+  select(-SLQ050)
+
+column_mapping <- c(
+  "SEQN" = "ID",
+  "SLQ300" = "sleep_time_weekday",
+  "SLQ310" = "wake_time_weekday",
+  "SLD012" = "duration_weekday",
+  "SLQ320" = "sleep_time_weekend",
+  "SLQ330" = "wake_time_weekend",
+  "SLD013" = "duration_weekend",
+  "SLQ030" = "snore_freq",
+  "SLQ040" = "snort_freq",
+  "SLQ120" = "feel_sleepy"
+)
+
+colnames(slqm) <- sapply(colnames(slqm), function(x) column_mapping[x])
+
+slqm <- slqm %>% 
+  mutate(duration_avg = duration_weekday * 5/7 + duration_weekend * 2/7)
+```
+
+For the Alcohol Use dataset, we found that some variables were too specific and didn't contribute significantly to our analysis. Additionally, we observed that certain variables were already captured within broader variables. For instance, the qustion "Past 12 months how often drink alcoholic beverages" was a subset of "Average number of alcoholic drinks per day in the past 12 months." Therefore, to streamline our analysis and avoid redundancy, we excluded these specific variables and retained the broader ones that encompassed their information.
+
+```{r mutate alq}
+alqm <- alq %>% 
+  select(SEQN, ALQ130, ALQ170) %>% 
+  mutate_all(~ ifelse(. %in% c(777, 999, '.', ''), NA, .))
+
+column_mapping <- c(
+  "SEQN" = "ID",
+  "ALQ130" = "AvgDrinksPerDay_Past12Months",
+  "ALQ170" = "Drink_Past30Days"
+)
+
+colnames(alqm) <- sapply(colnames(alqm), function(x) column_mapping[x])
+```
+
+For the Mental Health-Depression Screener, a total score ranging from 0 to 27 was calculated based on complete responses to symptom questions. Pre-defined cut-points were applied to assess depression severity, with scores less than 10 indicating rare occurrence of major depressive episodes, and scores of 15 or greater suggesting the presence of a major depressive episode.[@Ehde2011] 
+
+```{r mutate dpq}
+related_vars <- c("DPQ010", "DPQ020", "DPQ030", "DPQ040", "DPQ050", "DPQ060", "DPQ070", "DPQ080", "DPQ090", "DPQ100")
+
+dpqm <- dpq %>% 
+  mutate_all(~ ifelse(. %in% c(7, 9, '.', ''), NA, .)) %>% 
+  mutate(score = rowSums(select(., all_of(related_vars)), na.rm = TRUE)) %>% 
+  mutate(extent = ifelse(score < 10, "rare", 
+                         ifelse(score >= 15, "severe", "normal")))
+
+column_mapping <- c(
+  "SEQN" = "ID",
+  "DPQ010" = "loss_interest",
+  "DPQ020" = "feeling_depression",
+  "DPQ030" = "sleep_disturbances",
+  "DPQ040" = "fatigue",
+  "DPQ050" = "appitite",
+  "DPQ060" = "Negative_Self_Perception",
+  "DPQ070" = "Difficulty_Concentrating",
+  "DPQ080" = "word_speed",
+  "DPQ090" = "suicidal_thoughts",
+  "DPQ100" = "impact_on_daily_life",
+  "score" = "score",
+  "extent" = "extent"
+)
+colnames(dpqm) <- sapply(colnames(dpqm), function(x) column_mapping[x])
+```
+
+In the Cardiovascular Health dataset, angina classification into grade 1 and grade 2 is determined using the Rose questionnaire criteria (Rose, 1962). For the purposes of our analysis, individuals who have angina in either grade are categorized as having angina.
+
+```{r mutate cdq}
+cdqm <- cdq %>%
+  mutate(
+    Grade1_Angina = ifelse(CDQ001 == 1 & CDQ002 == 1 & CDQ003 != 1 & CDQ004 == 1 & CDQ005 == 1 & CDQ006 == 1 & ((CDQ009D == 4 | CDQ009E == 5) | (CDQ009F == 6 & CDQ009G == 7)), TRUE, FALSE),
+    Grade2_Angina = ifelse(CDQ001 == 1 & CDQ002 == 1 & CDQ003 == 1 & CDQ004 == 1 & CDQ005 == 1 & CDQ006 == 1 & ((CDQ009D == 4 | CDQ009E == 5) | (CDQ009F == 6 & CDQ009G == 7)), TRUE, FALSE)
+  ) %>% 
+  mutate(
+    Grade1_Angina = replace_na(Grade1_Angina, FALSE),
+    Grade2_Angina = replace_na(Grade2_Angina, FALSE)
+  ) %>% 
+  mutate(Angina = (Grade1_Angina|Grade2_Angina)) %>% 
+  select(SEQN, Grade1_Angina, Grade2_Angina, Angina, CDQ008, CDQ010)
+
+  
+column_mapping <- c(
+  "SEQN" = "ID",
+  "CDQ008" = "chest_pain_severe_lasting",
+  "CDQ010" = "breath_shortness",
+  "Grade1_Angina" = "Grade1_Angina",
+  "Grade2_Angina" = "Grade2_Angina",
+  "Angina" = "Angina"
+)
+# Renaming columns using the mapping dictionary
+colnames(cdqm) <- sapply(colnames(cdqm), function(x) column_mapping[x])
+```
+
+# Preliminary Results 
+
+```{r, warning=FALSE}
+slqm_long <- slqm %>%
+  gather(key = "variable", value = "value", duration_avg, duration_weekday, duration_weekend)
+
+ggplot(slqm_long, aes(x = value, fill = variable)) +
+  geom_histogram(binwidth = 1, color = "black", alpha = 0.6, position = "identity") +
+  labs(title = "Distribution of Duration",
+       x = "Duration",
+       y = "Frequency",
+       fill = "Variable") +
+  theme_minimal()
+```
+
+The histogram above shows the sleep duration distribution in general. We could note that there's a distinct difference in how sleep duration is distributed between weekdays and weekends. On weekdays, we observe a tendency for sleep duration to skew more towards the right, indicating shorter durations overall. Conversely, during weekends, the distribution shifts towards the left, suggesting longer sleep durations on average. This implies that people tend to get more sleep during weekends compared to weekdays. 
+
+```{r, warning=FALSE}
+ggplot(slqm, aes(x = feel_sleepy)) +
+  geom_bar(fill = "skyblue", color = "black") +
+  labs(title = "Distribution of Feel Sleepy", x = "Feel Sleepy", y = "Count") +
+  theme_minimal()
+```
+
+The barplot reveals that the majority of individuals tend to experience occasional (level 2) feelings of sleepiness, typically occurring around 2-4 times per month. It's worth noting that the distribution of this variable is not uniform, indicating a potential imbalance in the data.
+
+```{r, warning=FALSE}
+ggplot(slqm, aes(x = duration_avg, fill = feel_sleepy)) +
+  geom_histogram(binwidth = 0.5, color = "black", position = "dodge", alpha = 0.7) +
+  labs(title = paste("Distribution of average duration by feel_sleepy"), x = "Average Duration", y = "Frequency") +
+  facet_wrap(~ feel_sleepy) +
+  theme_minimal()
+```
+
+The histogram illustrates the distribution of average duration across various levels of feeling sleepy. Although the distributions are not notably distinct, it's evident that the sample sizes differ across the different levels of feeling sleepy. Interestingly, individuals who report feeling sleepy almost always (16-30 times a month) exhibit a slightly right-skewed distribution compared to those who experience sleepiness less frequently.
+
+```{r}
+slqm_sleepy <- slqm
+slqm_sleepy$feel_sleepy <- factor(slqm_sleepy$feel_sleepy)
+lm_model <- lm(duration_avg ~ feel_sleepy, data = slqm_sleepy)
+
+summary(lm_model)
+```
+Additionally, we conducted a linear regression analysis to explore the relationship between different levels of the sleep quality indicator "feel_sleepy" and average sleep duration. Overall, the interpretation of the coefficients suggests that there are differences in average duration among different levels of feel_sleepy. Notably, the result suggests that, on average, feeling sleepier is associated with shorter sleep durations.  However, the relatively low R-squared value and some of the insignificant coefficient p-value indicates that the model explains only a small amount of the variance in duration_avg, suggesting that other factors not included in the model may also influence the duration.
+
+```{r, warning=FALSE}
+col <- "snore_freq"
+ggplot(slqm, aes(x = duration_avg, fill = .data[[col]])) +
+        geom_histogram(binwidth = 1, color = "black", position = "dodge", alpha = 0.7) +
+        labs(title = paste("Distribution of average duration by", col), x = "Duration Weekday", y = "Frequency") +
+        facet_wrap(~ .data[[col]]) +
+        theme_minimal()
+```
+
+```{r}
+slqm_snore <- slqm
+slqm_snore$snore_freq <- factor(slqm_snore$snore_freq)
+lm_model <- lm(duration_avg ~ snore_freq, data = slqm_snore)
+
+summary(lm_model)
+```
+
+One thing worth noticing apart from the initial hypothesis would be that on average, the level of snore frequency also negatively correlates with average sleep duration from the plot as well as the linear regression model. 
+
+```{r, warning=FALSE}
+p1 <- ggplot(alqm, aes(x = AvgDrinksPerDay_Past12Months)) +
+  geom_histogram(fill = "skyblue", bins = 15) +
+  ggtitle("Average Drinks Per Day Over the Past 12 Months") +
+  ylab("Observation Count") +
+  xlab("Average Drinks Per Day") +
+  theme_minimal()
+p2 <- ggplot(alqm, aes(x = Drink_Past30Days)) +
+  geom_histogram(fill = "skyblue", bins = 15) +
+  ggtitle("Number of times drinking during the past 30 days") +
+  xlab("Number of drinks") +
+  ylab("Count") +
+  theme_minimal()
+
+grid.arrange(p1, p2)
+```
+
+We could observe that most people drink a little, so both the plots are extremely right-skewed. While extreme values like 15 drinks per day over the past 12 months and drink everyday during the past 30 days exist, such observations may provide potential insights to the relationship between alcohol abuse and sleep duration.
+
+```{r, message=FALSE}
+alc_merge <- merge(alqm, slqm) %>% 
+  filter(!is.na(Drink_Past30Days)) %>% 
+  filter(!is.na(duration_avg))
+ggplot(alc_merge, aes(x = Drink_Past30Days, y = duration_avg)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  ggtitle("Average Drinks Per Day vs. Duration Average") +
+  xlab("Average Drinks Per Day") +
+  ylab("Duration Average")
+
+```
+```{r}
+lm_model <- lm(duration_avg ~ Drink_Past30Days, data = alc_merge)
+summary(lm_model)
+```
+
+After merging the alcohol use dataset and sleep disorder dataset, we could conduct a linear regression analysis, as the plot and model summary are shown above. The analysis revealed a statistically significant negative relationship between the frequency of alcohol consumption and average sleep duration. Specifically, for each additional instance of alcohol consumption in the past 30 days, there was a decrease of approximately 0.011 hours (about 40 seconds) in average sleep duration.
+
+The model's adjusted R-squared value suggests that the frequency of alcohol consumption explains only a small portion of the variability in average sleep duration, indicating that other factors not included in the model may also influence sleep duration.
+
+```{r}
+car_merge <- merge(cdqm, slqm, by = "ID")
+```
+
+```{r, warning=FALSE}
+ggplot(car_merge, aes(x = duration_avg, fill = Angina)) +
+  geom_histogram(binwidth = 1, color = "black", position = "dodge", alpha = 0.7) +
+  labs(title = "Distribution of average duration by Angina", x = "Duration Weekday", y = "Frequency") +
+  facet_wrap(~ Angina) +
+  theme_minimal()
+```
+
+```{r}
+model <- lm(duration_avg ~ Angina, data = car_merge)
+summary(model)
+```
+
+In summary, the histogram analysis reveals that due to imbalanced data, it's challenging to discern any substantial differences in distribution between groups aside from frequency counts.
+
+Regarding the fitted linear regression model, the coefficient for the variable indicating the presence of angina is estimated to be approximately -0.06663. This suggests that, on average, individuals with symptoms related to angina have slightly shorter sleep durations. However, this finding is not statistically significant, with a p-value of 0.518, indicating that we cannot reject the null hypothesis.
+
+Additionally, the adjusted R-squared value, which measures the proportion of variability explained by the model, is close to zero. This indicates that the model does not account for much of the variability in average sleep duration. Furthermore, the low F-statistic supports the conclusion that the model does not provide a good fit to the data.
+
+Overall, based on this analysis, there is insufficient evidence to suggest a significant relationship between the presence of angina and average sleep duration.
+
+```{r, warning=FALSE}
+dpq_merge <- merge(dpqm, slqm, by = "ID")
+ggplot(dpq_merge, aes(x = extent)) +
+  geom_bar(fill = "skyblue", color = "black") +
+  labs(title = "Distribution of Feel Sleepy", x = "Feel Sleepy", y = "Count") +
+  theme_minimal()
+```
+
+```{r, warning=FALSE}
+col <- "extent"
+
+ggplot(dpq_merge, aes(x = duration_avg, fill = .data[[col]])) +
+    geom_histogram(binwidth = 1, color = "black", position = "dodge", alpha = 0.7) +
+    labs(title = paste("Distribution of duration_weekday by", col), x = "Duration Weekday", y = "Frequency") +
+    facet_wrap(~ .data[[col]]) +
+    theme_minimal()
+```
+
+```{r}
+model <- lm(duration_avg ~ extent, data = dpq_merge)
+summary(model)
+```
+
+The analysis of the Depression Screener dataset reveals insignificant coefficients and distributions for each category of depression extent. Both the plots and the results of the linear regression indicate that the relationship between depression extent alone and average sleep duration is not statistically significant.
+
+The coefficients for both "rare" and "severe" levels of depression extent are estimated to be 0.07602 and -0.16628, respectively. However, neither coefficient is statistically significant, as indicated by their p-values (0.270 and 0.126, respectively). This suggests that there is no significant association between the extent of depression symptoms and average sleep duration.
+
+Additionally, the adjusted R-squared value is very close to zero, indicating that the model explains very little of the variability in average sleep duration. The F-statistic is statistically significant, but the low value suggests that the overall model fit is weak.
+
+In summary, similar to the Cardiovascular dataset results, the analysis of the Depression Screener dataset shows that neither the distribution nor the relationship between the extent of depression symptoms and average sleep duration is statistically significant.
+
+# Summary 
+
+From the analysis conducted on the NHANES dataset to investigate factors correlating with sleep duration, several key findings emerge:
+
+_Sleep Duration Distribution_: There is a distinct difference in sleep duration distribution between weekdays and weekends. Weekdays tend to skew towards shorter durations, while weekends show longer durations on average, indicating a sleep pattern influenced by the day of the week.
+
+_Sleep Quality_: The majority of individuals experience occasional feelings of sleepiness, typically occurring around 2-4 times per month. However, the distribution is not uniform, suggesting potential data imbalance A linear regression analysis exploring the relationship between different levels of sleep quality and average sleep duration suggests that feeling sleepier is associated with shorter sleep durations. However, the model explains only a small portion of the variance in sleep duration, indicating potential influences from other factors not included in the model.
+
+_Alcohol Consumption_: The frequency of alcohol consumption exhibits a statistically significant negative relationship with average sleep duration. Increased alcohol consumption is associated with shorter sleep durations, although the model explains only a small portion of the variability in sleep duration, suggesting the influence of other factors.
+
+_Angina Presence_: There is insufficient evidence to suggest a significant relationship between the presence of angina and average sleep duration based on the linear regression analysis.
+
+_Depression Extent_: Similar to the findings in the cardiovascular dataset, the extent of depression symptoms does not exhibit a significant relationship with average sleep duration.
+
+In addition to the initial hypothesis:
+
+_Snoring Frequency_: On average, the frequency of snoring negatively correlates with average sleep duration with a low p-value indicating statistical significance, as observed from both plots and linear regression results, despite the low adjusted R squared value.
+
+In summary, while certain factors such as alcohol consumption demonstrate a significant association with sleep duration, other variables like angina presence and depression extent do not show statistically significant relationships. The analysis highlights the complexity of factors influencing sleep duration and suggests the potential presence of additional unexplored variables impacting sleep patterns, and more factors as well as their combinations needs to be investigated further for our hypothesis.
+
+
+# Bibliography
+
+National Heart, Lung, and Blood Institute (NHLBI). (2022, March 24). Sleep deprivation and deficiency., Retrieved March 10, 2024, from
+https://www.nhlbi.nih.gov/health-topics/sleep-deprivation-and-deficiency
+
+
+ROSE G. A. (1962). The diagnosis of ischaemic heart pain and intermittent claudication in field surveys. Retrieved March 10, Bulletin of the World Health Organization, 27(6), 645–658.
