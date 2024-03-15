@@ -186,7 +186,14 @@ slqm_sleepy <- slqm
 slqm_sleepy$feel_sleepy <- factor(slqm_sleepy$feel_sleepy)
 lm_model <- lm(duration_avg ~ feel_sleepy, data = slqm_sleepy)
 
-summary(lm_model)
+summary_lm <- summary(lm_model)
+coefficients <- summary_lm$coefficients[, "Estimate"]
+p_values <- format.pval(summary_lm$coefficients[, "Pr(>|t|)"], digits = 3)
+coefficients_summary <- cbind(coefficients, p_values)
+colnames(coefficients_summary) <- c("Coefficient", "P-value")
+coefficients_summary
+
+cat(sprintf("Adjusted R-squared: %.3f\n", summary_lm$adj.r.squared))
 ```
 Additionally, we conducted a linear regression analysis to explore the relationship between different levels of the sleep quality indicator "feel_sleepy" and average sleep duration. Overall, the interpretation of the coefficients suggests that there are differences in average duration among different levels of feel_sleepy. Notably, the result suggests that, on average, feeling sleepier is associated with shorter sleep durations.  However, the relatively low R-squared value and some of the insignificant coefficient p-value indicates that the model explains only a small amount of the variance in duration_avg, suggesting that other factors not included in the model may also influence the duration.
 
@@ -204,7 +211,14 @@ slqm_snore <- slqm
 slqm_snore$snore_freq <- factor(slqm_snore$snore_freq)
 lm_model <- lm(duration_avg ~ snore_freq, data = slqm_snore)
 
-summary(lm_model)
+summary_lm <- summary(lm_model)
+coefficients <- summary_lm$coefficients[, "Estimate"]
+p_values <- format.pval(summary_lm$coefficients[, "Pr(>|t|)"], digits = 3)
+coefficients_summary <- cbind(coefficients, p_values)
+colnames(coefficients_summary) <- c("Coefficient", "P-value")
+coefficients_summary
+
+cat(sprintf("Adjusted R-squared: %.3f\n", summary_lm$adj.r.squared))
 ```
 
 One thing worth noticing apart from the initial hypothesis would be that on average, the level of snore frequency also negatively correlates with average sleep duration from the plot as well as the linear regression model. 
@@ -242,7 +256,14 @@ ggplot(alc_merge, aes(x = Drink_Past30Days, y = duration_avg)) +
 ```
 ```{r}
 lm_model <- lm(duration_avg ~ Drink_Past30Days, data = alc_merge)
-summary(lm_model)
+summary_lm <- summary(lm_model)
+coefficients <- summary_lm$coefficients[, "Estimate"]
+p_values <- format.pval(summary_lm$coefficients[, "Pr(>|t|)"], digits = 3)
+coefficients_summary <- cbind(coefficients, p_values)
+colnames(coefficients_summary) <- c("Coefficient", "P-value")
+coefficients_summary
+
+cat(sprintf("Adjusted R-squared: %.3f\n", summary_lm$adj.r.squared))
 ```
 
 After merging the alcohol use dataset and sleep disorder dataset, we could conduct a linear regression analysis, as the plot and model summary are shown above. The analysis revealed a statistically significant negative relationship between the frequency of alcohol consumption and average sleep duration. Specifically, for each additional instance of alcohol consumption in the past 30 days, there was a decrease of approximately 0.011 hours (about 40 seconds) in average sleep duration.
@@ -263,14 +284,21 @@ ggplot(car_merge, aes(x = duration_avg, fill = Angina)) +
 
 ```{r}
 model <- lm(duration_avg ~ Angina, data = car_merge)
-summary(model)
+summary_lm <- summary(lm_model)
+coefficients <- summary_lm$coefficients[, "Estimate"]
+p_values <- format.pval(summary_lm$coefficients[, "Pr(>|t|)"], digits = 3)
+coefficients_summary <- cbind(coefficients, p_values)
+colnames(coefficients_summary) <- c("Coefficient", "P-value")
+coefficients_summary
+
+cat(sprintf("Adjusted R-squared: %.3f\n", summary_lm$adj.r.squared))
 ```
 
 In summary, the histogram analysis reveals that due to imbalanced data, it's challenging to discern any substantial differences in distribution between groups aside from frequency counts.
 
 Regarding the fitted linear regression model, the coefficient for the variable indicating the presence of angina is estimated to be approximately -0.06663. This suggests that, on average, individuals with symptoms related to angina have slightly shorter sleep durations. However, this finding is not statistically significant, with a p-value of 0.518, indicating that we cannot reject the null hypothesis.
 
-Additionally, the adjusted R-squared value, which measures the proportion of variability explained by the model, is close to zero. This indicates that the model does not account for much of the variability in average sleep duration. Furthermore, the low F-statistic supports the conclusion that the model does not provide a good fit to the data.
+Additionally, the adjusted R-squared value, which measures the proportion of variability explained by the model, is close to zero. This indicates that the model does not account for much of the variability in average sleep duration.
 
 Overall, based on this analysis, there is insufficient evidence to suggest a significant relationship between the presence of angina and average sleep duration.
 
@@ -293,15 +321,22 @@ ggplot(dpq_merge, aes(x = duration_avg, fill = .data[[col]])) +
 ```
 
 ```{r}
-model <- lm(duration_avg ~ extent, data = dpq_merge)
-summary(model)
+lm_model <- lm(duration_avg ~ extent, data = dpq_merge)
+summary_lm <- summary(lm_model)
+coefficients <- summary_lm$coefficients[, "Estimate"]
+p_values <- format.pval(summary_lm$coefficients[, "Pr(>|t|)"], digits = 3)
+coefficients_summary <- cbind(coefficients, p_values)
+colnames(coefficients_summary) <- c("Coefficient", "P-value")
+coefficients_summary
+
+cat(sprintf("Adjusted R-squared: %.3f\n", summary_lm$adj.r.squared))
 ```
 
 The analysis of the Depression Screener dataset reveals insignificant coefficients and distributions for each category of depression extent. Both the plots and the results of the linear regression indicate that the relationship between depression extent alone and average sleep duration is not statistically significant.
 
 The coefficients for both "rare" and "severe" levels of depression extent are estimated to be 0.07602 and -0.16628, respectively. However, neither coefficient is statistically significant, as indicated by their p-values (0.270 and 0.126, respectively). This suggests that there is no significant association between the extent of depression symptoms and average sleep duration.
 
-Additionally, the adjusted R-squared value is very close to zero, indicating that the model explains very little of the variability in average sleep duration. The F-statistic is statistically significant, but the low value suggests that the overall model fit is weak.
+Additionally, the adjusted R-squared value is very close to zero, indicating that the model explains very little of the variability in average sleep duration.
 
 In summary, similar to the Cardiovascular dataset results, the analysis of the Depression Screener dataset shows that neither the distribution nor the relationship between the extent of depression symptoms and average sleep duration is statistically significant.
 
@@ -328,8 +363,7 @@ In summary, while certain factors such as alcohol consumption demonstrate a sign
 
 # Bibliography
 
-National Heart, Lung, and Blood Institute (NHLBI). (2022, March 24). Sleep deprivation and deficiency., Retrieved March 10, 2024, from
-https://www.nhlbi.nih.gov/health-topics/sleep-deprivation-and-deficiency
+National Heart, Lung, and Blood Institute (NHLBI). (2022, March 24). Sleep deprivation and deficiency., Retrieved March 10, 2024,     from https://www.nhlbi.nih.gov/health-topics/sleep-deprivation-and-deficiency
 
 
-ROSE G. A. (1962). The diagnosis of ischaemic heart pain and intermittent claudication in field surveys. Retrieved March 10, Bulletin of the World Health Organization, 27(6), 645–658.
+ROSE G. A. (1962). The diagnosis of ischaemic heart pain and intermittent claudication in field surveys. Retrieved March 10,         Bulletin of the World Health Organization, 27(6), 645–658.
